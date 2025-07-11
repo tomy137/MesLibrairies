@@ -1,6 +1,8 @@
 # MesLibrairies
 
-Un outil Python pour scraper les nouveautés livres sur [leslibraires.fr](https://www.leslibraires.fr), stocker les résultats dans une base SQLite, et envoyer un rapport hebdomadaire par email.
+L'idée est simple: vous ajoutez vos auteurs préférés et recevez un mail toutes les semaines pour ne pas rater leurs nouvelles sorties en librairies !
+
+C'est un outil Python pour scraper les nouveautés livres sur [leslibraires.fr](https://www.leslibraires.fr), stocker les résultats dans une base SQLite, et envoyer un rapport hebdomadaire par email.
 
 ## Fonctionnalités
 
@@ -116,6 +118,12 @@ MesLibrairies/
 ├── Dockerfile
 └── init_thomas.sh
 ```
+
+## TODO
+- Revoir la tête du mail
+- Transformer en API
+- Faire un front
+- Gérer le multi users
 
 ## Licence
 
