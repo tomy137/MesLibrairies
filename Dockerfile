@@ -9,9 +9,11 @@ RUN apt-get update && apt-get install -y \
 
 # Copier le script dans le conteneur
 COPY main.py .
+COPY core/ core/
+
 
 # Installer les dépendances Python
-RUN pip install --no-cache-dir requests beautifulsoup4 pendulum smtplib loguru
+RUN pip install --no-cache-dir requests beautifulsoup4 pendulum loguru
 
 # Définir la commande par défaut
 CMD ["python", "main.py"]
