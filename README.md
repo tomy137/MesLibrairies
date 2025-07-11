@@ -27,9 +27,34 @@ pip install -r requirements.txt  # (à créer si besoin)
 ### Utilisation avec Docker
 
 ```bash
-docker build -t leslibrairies .
+#docker build -t leslibrairies .
+docker pull tomy137/meslibrairies
 docker run --rm -v $(pwd)/books.db:/app/books.db leslibrairies
 ```
+
+### Docker-compose 
+```yaml
+  meslibrairies:
+    container_name: meslibrairies
+    image: tomy137/meslibrairies
+    restart: "no"
+    logging: *default-logging
+    environment:
+      - SMTP_SERVER=xxxx
+      - SMTP_LOGIN=xxxx
+      - SMTP_PORT=xxxx
+      - SMTP_PASSWORD=xxxx
+    volumes:
+      - ./meslibrairies/books.db:/app/books.db:rw
+```
+
+### Exemple à ajouter dans la crontab 
+Pour une execution tous les dimanches à 18h :
+
+```bash
+0 18 * * 0 docker compose -f "/path/to/docker-compose.yml" run --rm meslibrairies python main.py --mail_to=mon@mail.com
+```
+
 
 ## Variables d'environnement
 
