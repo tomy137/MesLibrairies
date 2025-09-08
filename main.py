@@ -25,6 +25,7 @@ class MesLibrairies(
             "User-Agent": "Mozilla/5.0",
             "HX-Request": "true",
         }
+        self.last_scrapping_summary = []
 
         BooksDB.__init__(self)
         BooksScraper.__init__(self)
@@ -39,18 +40,36 @@ class MesLibrairies(
         cur.execute("SELECT id, slug FROM authors")
         authors = cur.fetchall()
 
-        added_books = []
+        self.last_scrapping_summary = []
+        total_added_books = []
+        
         for author in authors:
             author_id, author_slug = author
             try:
-                added_books += self.scrap_books_by_author(author_id=author_id, author_slug=author_slug)
+                added_books = self.scrap_books_by_author(author_id=author_id, author_slug=author_slug)
+                total_added_books += added_books
+                
+                # Ajouter un résumé pour cet auteur
+                self.last_scrapping_summary.append({
+                    'author_slug': author_slug,
+                    'author_id': author_id,
+                    'books_added': len(added_books),
+                    'books': added_books
+                })
             except Exception as e:
                 logging.warning(f"😟 Error fetching books for author {author_slug}: {e}")
+                self.last_scrapping_summary.append({
+                    'author_slug': author_slug,
+                    'author_id': author_id,
+                    'books_added': 0,
+                    'books': [],
+                    'error': str(e)
+                })
                 continue
 
         cur.close()
-        if added_books:
-            logging.info(f"📚 {len(added_books)} books added to the database.")
+        if total_added_books:
+            logging.info(f"📚 {len(total_added_books)} books added to the database.")
         else:
             logging.info("No new books were added.")
 
