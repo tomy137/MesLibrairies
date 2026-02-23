@@ -132,7 +132,7 @@ MesLibrairies/
 ```
 
 ## TODO
-- Revoir la tête du mail
+- ~~Revoir la tête du mail~~
 - Transformer en API
 - Faire un front
 - Gérer le multi users
