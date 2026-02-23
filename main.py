@@ -49,29 +49,24 @@ class MesLibrairies(
         logging.info(f"🖼️ {updated} couverture(s) mise(s) à jour.")
 
     def refresh_books(self):
-        """
-        Refresh books for all authors in the database.
-        This method should be implemented to scrape books for each author.
-        """
+        """Refresh books for all authors in the database."""
         cur = self.conn.cursor()
         cur.execute("SELECT id, slug FROM authors")
         authors = cur.fetchall()
+        cur.close()
 
         self.last_scrapping_summary = []
-        total_added_books = []
-        
-        for author in authors:
-            author_id, author_slug = author
+        total_added = 0
+
+        for author_id, author_slug in authors:
             try:
                 added_books = self.scrap_books_by_author(author_id=author_id, author_slug=author_slug)
-                total_added_books += added_books
-                
-                # Ajouter un résumé pour cet auteur
+                total_added += len(added_books)
                 self.last_scrapping_summary.append({
                     'author_slug': author_slug,
                     'author_id': author_id,
                     'books_added': len(added_books),
-                    'books': added_books
+                    'books': added_books,
                 })
             except Exception as e:
                 logging.warning(f"😟 Error fetching books for author {author_slug}: {e}")
@@ -80,13 +75,11 @@ class MesLibrairies(
                     'author_id': author_id,
                     'books_added': 0,
                     'books': [],
-                    'error': str(e)
+                    'error': str(e),
                 })
-                continue
 
-        cur.close()
-        if total_added_books:
-            logging.info(f"📚 {len(total_added_books)} books added to the database.")
+        if total_added:
+            logging.info(f"📚 {total_added} books added to the database.")
         else:
             logging.info("No new books were added.")
 
@@ -102,12 +95,8 @@ if __name__ == "__main__":
     mesLibrairies = MesLibrairies()
 
     if args.command == "add":
-        author_id = args.author_id
-        author_slug = args.author_slug
-        logging.debug(f"Ajout de l'auteur {author_slug}({author_id}) à la base de données.")
-
-        mesLibrairies.get_add_author(author_id, author_slug)
-        # mesLibrairies.scrap_books_by_author(author_id, author_slug)
+        logging.debug(f"Ajout de l'auteur {args.author_slug}({args.author_id}) à la base de données.")
+        mesLibrairies.get_add_author(args.author_id, args.author_slug)
 
     elif args.command == "refresh":
         logging.debug("Rafraichissement des livres des auteurs déjà en base de données.")
@@ -120,26 +109,7 @@ if __name__ == "__main__":
 
     elif args.command == "preview":
         logging.debug("Génération de la preview HTML.")
-        weekly_books = mesLibrairies.get_weekly_books()
-        monthly_books = mesLibrairies.get_monthly_books()
-
-        html = f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8"/></head>
-<body style="margin:0;padding:0;background:#f5f5f5;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
-<div style="max-width:600px;margin:20px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
-    <div style="background:#2c5282;color:white;padding:24px;text-align:center;">
-        <h1 style="margin:0;font-size:22px;">📚 Des nouvelles de vos librairies !</h1>
-    </div>
-    <div style="padding:20px 24px;">
-        {mesLibrairies._render_books_section("Cette semaine", weekly_books)}
-        {mesLibrairies._render_books_section("Ce mois-ci", monthly_books)}
-    </div>
-    <div style="background:#f0f4f8;padding:12px;text-align:center;font-size:11px;color:#888;">
-        MesLibrairies — données issues de leslibraires.fr
-    </div>
-</div>
-</body></html>"""
-
+        html = mesLibrairies.build_newsletter_html()
         with open("/tmp/mail_preview.html", "w") as f:
             f.write(html)
         logging.info("✅ Preview saved to /tmp/mail_preview.html")

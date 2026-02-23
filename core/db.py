@@ -7,12 +7,6 @@ import pendulum
 
 class BooksDB:
     def __init__(self):
-        """
-        Get a SQLite database connection.
-
-        :param path: Path to the SQLite database file.
-        :return: SQLite connection object.
-        """
         self.conn = sqlite3.connect(self.db_path)
         cur = self.conn.cursor()
 
@@ -67,7 +61,6 @@ class BooksDB:
         cur.execute("SELECT * FROM authors WHERE id = ?", (author_id,))
         author_row = cur.fetchone()
 
-        ## If the author is not found in the database, add them.
         if not author_row:
             author_url = f"{self.source_url}/personne/{author_slug}/{author_id}/"
 
@@ -204,28 +197,16 @@ class BooksDB:
 
         cur = self.conn.cursor()
         cur.execute(
-            "SELECT id, title FROM books WHERE author_id = ? AND id != ?",
+            "SELECT title FROM books WHERE author_id = ? AND id != ?",
             (author_id, book_id),
         )
-        for row in cur:
-            if self.normalize_title(row[1]) == normalized:
-                cur.close()
-                return True
+        rows = cur.fetchall()
         cur.close()
-        return False
+        return any(self.normalize_title(row[0]) == normalized for row in rows)
 
-    def get_books(self, _SQL: str, params: tuple = ()) -> list[dict]:
-        """
-        Get books from the database based on a SQL query.
-        """
+    def get_books(self, query: str, params: tuple = ()) -> list[dict]:
+        """Get books from the database based on a SQL query."""
         with self.conn as conn:
-            cur = conn.execute(_SQL, params)
-            rows = cur.fetchall()
-            columns = [column[0] for column in cur.description]
-
-            books = []
-            for row in rows:
-                book = dict(zip(columns, row))
-                books.append(book)
-
-            return books
+            cur = conn.execute(query, params)
+            columns = [col[0] for col in cur.description]
+            return [dict(zip(columns, row)) for row in cur.fetchall()]

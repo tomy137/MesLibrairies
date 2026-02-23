@@ -1,5 +1,4 @@
 import os
-import traceback
 from html import escape
 from loguru import logger as logging
 import smtplib
@@ -24,15 +23,14 @@ class BooksMailer:
         msg.add_alternative(html_body, subtype="html")
 
         try:
-            logging.debug(f"Connecting to SMTP server: {os.environ.get('SMTP_SERVER')}")
+            logging.debug(f"Connecting to SMTP server: {self.smtp_server}")
             with smtplib.SMTP(self.smtp_server, self.smtp_port) as server:
                 server.starttls()
                 server.login(self.sender_email, self.sender_password)
                 server.send_message(msg)
             logging.info(f"✉️ Email envoyé à {msg['To']}")
-        except Exception as e:
-            logging.warning(f"Erreur lors de l'envoi de l'email : {e}")
-            logging.warning(traceback.format_exc())
+        except Exception:
+            logging.opt(exception=True).warning("Erreur lors de l'envoi de l'email")
 
     def _book_cover_url(self, book):
         url = book.get("picture_link") or ""
@@ -58,18 +56,16 @@ class BooksMailer:
 
         # 2. Keywords in title
         title_lower = (book.get("title") or "").lower()
-        for kw in self.REEDITION_KEYWORDS:
-            if kw in title_lower:
-                return True
+        if any(kw in title_lower for kw in self.REEDITION_KEYWORDS):
+            return True
 
         # 3. Same author already has a similar title in DB
         author_id = book.get("author_id")
         book_id = book.get("id")
-        if author_id and book_id:
-            if self.has_similar_book(author_id, book.get("title", ""), book_id):
-                return True
-
-        return False
+        return bool(
+            author_id and book_id
+            and self.has_similar_book(author_id, book.get("title", ""), book_id)
+        )
 
     def _render_book_card(self, book):
         title = escape(book.get("title") or "Sans titre")
@@ -79,11 +75,11 @@ class BooksMailer:
         url = book.get("url") or "#"
         cover_url = self._book_cover_url(book)
 
-        is_reedition = self._detect_reedition(book)
-        if is_reedition:
-            badge = '<span style="display:inline-block;background:#fed7aa;color:#c2410c;font-size:11px;font-weight:600;padding:1px 6px;border-radius:4px;margin-left:6px;vertical-align:middle;">📙 Réédition</span>'
+        badge_style = "display:inline-block;font-size:11px;font-weight:600;padding:1px 6px;border-radius:4px;margin-left:6px;vertical-align:middle;"
+        if self._detect_reedition(book):
+            badge = f'<span style="{badge_style}background:#fed7aa;color:#c2410c;">📙 Réédition</span>'
         else:
-            badge = '<span style="display:inline-block;background:#bbf7d0;color:#15803d;font-size:11px;font-weight:600;padding:1px 6px;border-radius:4px;margin-left:6px;vertical-align:middle;">📗 Nouveau</span>'
+            badge = f'<span style="{badge_style}background:#bbf7d0;color:#15803d;">📗 Nouveau</span>'
 
         cover_html = ""
         if cover_url:
@@ -125,25 +121,27 @@ class BooksMailer:
         </div>"""
 
     def _render_scrapping_report(self):
-        if not hasattr(self, 'last_scrapping_summary') or not self.last_scrapping_summary:
+        summary = getattr(self, 'last_scrapping_summary', [])
+        if not summary:
             return ""
 
-        total_books = sum(s['books_added'] for s in self.last_scrapping_summary)
-        total_authors = len(self.last_scrapping_summary)
+        total_books = sum(s['books_added'] for s in summary)
+        total_authors = len(summary)
 
         rows = []
-        for s in self.last_scrapping_summary:
+        cell = "padding:3px 8px;"
+        for s in summary:
             slug = escape(s['author_slug'])
             if 'error' in s:
-                rows.append(f"<tr><td style='padding:3px 8px;'>❌ {slug}</td><td style='color:red;padding:3px 8px;'>Erreur</td></tr>")
+                rows.append(f"<tr><td style='{cell}'>❌ {slug}</td><td style='color:red;{cell}'>Erreur</td></tr>")
             elif s['books_added'] == 0:
-                rows.append(f"<tr><td style='padding:3px 8px;'>✅ {slug}</td><td style='color:#888;padding:3px 8px;'>Aucun nouveau</td></tr>")
+                rows.append(f"<tr><td style='{cell}'>✅ {slug}</td><td style='color:#888;{cell}'>Aucun nouveau</td></tr>")
             else:
                 book_lines = "".join(
                     f"<div style='padding:1px 0 1px 16px;color:#555;'>└─ {escape(b.get('title', 'N/A'))} ({escape(b.get('author', 'N/A'))})</div>"
                     for b in s['books']
                 )
-                rows.append(f"<tr><td colspan='2' style='padding:3px 8px;'>📘 {slug} : <strong>{s['books_added']} ajouté(s)</strong>{book_lines}</td></tr>")
+                rows.append(f"<tr><td colspan='2' style='{cell}'>📘 {slug} : <strong>{s['books_added']} ajouté(s)</strong>{book_lines}</td></tr>")
 
         return f"""
         <div style="margin:30px 0 10px;padding:16px;background:#f0f4f8;border-radius:8px;font-size:13px;">
@@ -153,11 +151,12 @@ class BooksMailer:
             </table>
         </div>"""
 
-    def send_weekly_news(self, to: str):
+    def build_newsletter_html(self, extra_content: str = "") -> str:
+        """Build the full HTML newsletter with weekly/monthly books and optional extra content."""
         weekly_books = self.get_weekly_books()
         monthly_books = self.get_monthly_books()
 
-        html = f"""<!DOCTYPE html>
+        return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"/></head>
 <body style="margin:0;padding:0;background:#f5f5f5;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
 <div style="max-width:600px;margin:20px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
@@ -167,7 +166,7 @@ class BooksMailer:
     <div style="padding:20px 24px;">
         {self._render_books_section("Cette semaine", weekly_books)}
         {self._render_books_section("Ce mois-ci", monthly_books)}
-        {self._render_scrapping_report()}
+        {extra_content}
     </div>
     <div style="background:#f0f4f8;padding:12px;text-align:center;font-size:11px;color:#888;">
         MesLibrairies — données issues de leslibraires.fr
@@ -175,4 +174,6 @@ class BooksMailer:
 </div>
 </body></html>"""
 
+    def send_weekly_news(self, to: str):
+        html = self.build_newsletter_html(extra_content=self._render_scrapping_report())
         self.send_email(to, "📚 Quoi de neuf en librairie ?", html)

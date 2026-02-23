@@ -2,32 +2,30 @@ import requests
 import re
 from loguru import logger as logging
 from bs4 import BeautifulSoup
-import datetime
+from datetime import date
+
+
+FRENCH_MONTHS = {
+    "janvier": 1, "février": 2, "mars": 3, "avril": 4,
+    "mai": 5, "juin": 6, "juillet": 7, "août": 8,
+    "septembre": 9, "octobre": 10, "novembre": 11, "décembre": 12,
+}
 
 
 class BooksScraper:
-    """
-    A class to scrape books from leslibraires.fr.
-    """
+    """A class to scrape books from leslibraires.fr."""
 
     def scrap_books_by_author(self, author_id, author_slug):
-        """
-        Scrape books by a specific author from leslibraires.fr.
-        :param author_id: ID of the author from leslibraires.fr
-        :param author_slug: Slug of the author from leslibraires.fr
-        """
-        logging.debug(f"Scraping books for author {author_slug} ({author_id})...")
-
-        HTMX_URL = f"{self.source_url}/htmx/contributions/?personID={author_id}&contributionType=By(author)"
+        """Scrape books by a specific author from leslibraires.fr."""
+        htmx_url = f"{self.source_url}/htmx/contributions/?personID={author_id}&contributionType=By(author)"
         page = 1
-        _continue = True
         added_books = []
         fetched_books = []
 
         logging.debug(f"🌎 Fetching {author_slug} books ...")
 
-        while _continue:
-            r = requests.get(HTMX_URL, params={"page": page}, headers=self.headers)
+        while True:
+            r = requests.get(htmx_url, params={"page": page}, headers=self.headers)
 
             if not r.content.strip():
                 break
@@ -36,20 +34,24 @@ class BooksScraper:
             if not books:
                 break
 
-            # logging.debug(f"├─ 📖 Page {page} : {len(books)} books found")
+            fetched_books.extend(books)
+            found_new_on_this_page = False
+
             for book in books:
-                fetched_books.append(book)
                 if not (book["title"] and book["author"]):
                     continue
                 book_details = self.parse_livre_details(book["url"])
-                merged = {**book, **{k: v for k, v in book_details.items() if v is not None}, "author_id": author_id}
-                if not self.insert_book(merged):
-                    # logging.debug(f"├─ 📖 Book already exists in the database: {book['title']} by {book['author']}")
-                    _continue = False
-                else:
+                non_null_details = {k: v for k, v in book_details.items() if v is not None}
+                merged = {**book, **non_null_details, "author_id": author_id}
+
+                if self.insert_book(merged):
                     logging.debug(f"├─ 📘 New book: {book['title']} by {book['author']}")
-                    _continue = True  ## Si on a ajouté ne serait-ce qu'un livre, on continue sur une page de plus.
+                    found_new_on_this_page = True
                     added_books.append(book)
+
+            if not found_new_on_this_page:
+                break
+
             page += 1
 
         logging.debug(f"🌎 Fetching {author_slug} books, find {len(fetched_books)} books, {len(added_books)} are new !")
@@ -97,17 +99,14 @@ class BooksScraper:
         # Parse "Date de publication" to ISO format if present
         date_pub = wanted_fields.get("Date de publication")
         if date_pub:
-            # Match formats like "6 novembre 2024"
             match = re.match(r"(\d{1,2}) (\w+) (\d{4})", date_pub)
             if match:
                 day, month_fr, year = match.groups()
-                months = {"janvier": 1, "février": 2, "mars": 3, "avril": 4, "mai": 5, "juin": 6, "juillet": 7, "août": 8, "septembre": 9, "octobre": 10, "novembre": 11, "décembre": 12}
-                month = months.get(month_fr.lower())
+                month = FRENCH_MONTHS.get(month_fr.lower())
                 if month:
                     try:
-                        dt = datetime.date(int(year), month, int(day))
-                        wanted_fields["Date de publication"] = dt.isoformat()
-                    except Exception:
+                        wanted_fields["Date de publication"] = date(int(year), month, int(day)).isoformat()
+                    except ValueError:
                         pass
 
         collection = wanted_fields.get("Collection")
