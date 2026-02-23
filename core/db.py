@@ -1,4 +1,6 @@
+import re
 import sqlite3
+import unicodedata
 from loguru import logger as logging
 import pendulum
 
@@ -44,10 +46,15 @@ class BooksDB:
             )
         """)
 
+        # Fix broken picture URLs from older scrapes (https// -> https://)
+        cur.execute("""
+            UPDATE books SET picture_link = 'https://' || SUBSTR(picture_link, 8)
+            WHERE picture_link LIKE 'https//%'
+        """)
+
         self.conn.commit()
         cur.close()
         logging.debug("Database initialized and tables created.")
-        return self.conn
 
     def get_add_author(self, author_id, author_slug):
         """
@@ -62,14 +69,14 @@ class BooksDB:
 
         ## If the author is not found in the database, add them.
         if not author_row:
-            author_url = f"{self.source}/personne/{author_slug}/{author_id}/"
+            author_url = f"{self.source_url}/personne/{author_slug}/{author_id}/"
 
             with self.conn as conn:
-                author_row = conn(
+                author_row = conn.execute(
                     """
                     INSERT INTO authors (id, slug, url)
                     VALUES (?, ?, ?)
-                    RETURNING *                      -- renvoie la ligne tout de suite
+                    RETURNING *
                     """,
                     (author_id, author_slug, author_url),
                 ).fetchone()
@@ -123,13 +130,12 @@ class BooksDB:
         start_of_week = pendulum.now().start_of("week").date().isoformat()
         end_of_week = pendulum.now().end_of("week").date().isoformat()
 
-        return self.get_books(f"""
-            SELECT * FROM books
-            WHERE publication_date >= {start_of_week} AND publication_date <= {end_of_week}
-            ORDER BY publication_date DESC
-        """)
+        return self.get_books(
+            "SELECT * FROM books WHERE publication_date >= ? AND publication_date <= ? ORDER BY publication_date DESC",
+            (start_of_week, end_of_week),
+        )
 
-    def get_montly_books(self):
+    def get_monthly_books(self):
         """
         Get books added during this month.
         """
@@ -138,19 +144,82 @@ class BooksDB:
         start_of_week = pendulum.now().start_of("week").date().isoformat()
         end_of_week = pendulum.now().end_of("week").date().isoformat()
 
-        return self.get_books(f"""
-            SELECT * FROM books
-            WHERE (publication_date >= {start_of_month} AND publication_date <= {end_of_month})
-            AND NOT (publication_date >= {start_of_week} AND publication_date <= {end_of_week})
-            ORDER BY publication_date DESC
-        """)
+        return self.get_books(
+            """SELECT * FROM books
+            WHERE (publication_date >= ? AND publication_date <= ?)
+            AND NOT (publication_date >= ? AND publication_date <= ?)
+            ORDER BY publication_date DESC""",
+            (start_of_month, end_of_month, start_of_week, end_of_week),
+        )
 
-    def get_books(self, _SQL: str) -> list[dict]:
+    def get_books_missing_cover(self) -> list[dict]:
+        start_of_month = pendulum.now().start_of("month").date().isoformat()
+        end_of_month = pendulum.now().end_of("month").date().isoformat()
+        return self.get_books(
+            """SELECT * FROM books
+            WHERE (picture_link IS NULL OR picture_link LIKE '%default/book%')
+            AND publication_date >= ? AND publication_date <= ?""",
+            (start_of_month, end_of_month),
+        )
+
+    def update_book_cover(self, book_url: str, picture_link: str):
+        with self.conn as conn:
+            conn.execute(
+                "UPDATE books SET picture_link = ? WHERE url = ?",
+                (picture_link, book_url),
+            )
+
+    @staticmethod
+    def normalize_title(title: str) -> str:
+        """Normalize a title for comparison: remove edition suffixes, punctuation, and lowercase."""
+        t = title.lower()
+        # Remove known edition/format suffixes
+        for pattern in [
+            r"\(?nouvelle traduction\)?",
+            r"\(?édition collector\)?",
+            r"\(?collector\)?",
+            r"\(?nouvelle édition\)?",
+            r"\(?édition anniversaire\)?",
+            r"\(?édition illustrée\)?",
+            r"\(?edition 20\d{2}\)?",
+            r"\(poche\)",
+            r"- poche$",
+            r"\btome \d+\b",
+            r"\bt\.\s*\d+\b",
+        ]:
+            t = re.sub(pattern, "", t)
+        # Strip accents
+        t = unicodedata.normalize("NFD", t)
+        t = re.sub(r"[\u0300-\u036f]", "", t)
+        # Keep only alphanum and spaces, collapse whitespace
+        t = re.sub(r"[^a-z0-9 ]", "", t)
+        t = re.sub(r"\s+", " ", t).strip()
+        return t
+
+    def has_similar_book(self, author_id: int, title: str, book_id: int) -> bool:
+        """Check if the same author already has a book with a similar normalized title."""
+        normalized = self.normalize_title(title)
+        if not normalized:
+            return False
+
+        cur = self.conn.cursor()
+        cur.execute(
+            "SELECT id, title FROM books WHERE author_id = ? AND id != ?",
+            (author_id, book_id),
+        )
+        for row in cur:
+            if self.normalize_title(row[1]) == normalized:
+                cur.close()
+                return True
+        cur.close()
+        return False
+
+    def get_books(self, _SQL: str, params: tuple = ()) -> list[dict]:
         """
         Get books from the database based on a SQL query.
         """
         with self.conn as conn:
-            cur = conn.execute(_SQL)
+            cur = conn.execute(_SQL, params)
             rows = cur.fetchall()
             columns = [column[0] for column in cur.description]
 

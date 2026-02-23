@@ -9,6 +9,7 @@ C'est un outil Python pour scraper les nouveautés livres sur [leslibraires.fr](
 - Scraping des livres par auteur depuis leslibraires.fr
 - Stockage des livres et auteurs dans une base SQLite
 - Envoi d'un rapport hebdomadaire des nouveautés par email
+- Détection automatique des rééditions (poche, collector, nouvelle traduction…) vs vraies nouveautés
 - Utilisable en ligne de commande ou via Docker
 
 ## Prérequis
@@ -89,6 +90,13 @@ python main.py refresh
 
 ```bash
 python main.py send_report --mail_to=destinataire@email.com
+```
+
+### Prévisualiser le mail sans l'envoyer
+
+```bash
+python main.py preview
+# Ouvre /tmp/mail_preview.html dans le navigateur
 ```
 
 ### Tout faire (scraper + envoyer le rapport)

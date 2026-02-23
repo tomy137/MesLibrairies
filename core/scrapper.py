@@ -39,9 +39,11 @@ class BooksScraper:
             # logging.debug(f"├─ 📖 Page {page} : {len(books)} books found")
             for book in books:
                 fetched_books.append(book)
-                if book["title"] and book["author"]:
-                    book_details = self.parse_livre_details(book["url"])
-                if not self.insert_book({**book, **book_details, "author_id": author_id}):
+                if not (book["title"] and book["author"]):
+                    continue
+                book_details = self.parse_livre_details(book["url"])
+                merged = {**book, **{k: v for k, v in book_details.items() if v is not None}, "author_id": author_id}
+                if not self.insert_book(merged):
                     # logging.debug(f"├─ 📖 Book already exists in the database: {book['title']} by {book['author']}")
                     _continue = False
                 else:
@@ -58,12 +60,21 @@ class BooksScraper:
         response = requests.get(url, headers=headers)
         soup = BeautifulSoup(response.text, "html.parser")
 
-        # === DESCRIPTION (facultative, au cas où tu veux l'ajouter) ===
+        # === COUVERTURE depuis la page de détail ===
+        cover_elem = soup.select_one("div.product-media img")
+        picture_link = None
+        if cover_elem and cover_elem.has_attr("src"):
+            src = cover_elem["src"]
+            if "default/book" not in src:
+                picture_link = f"https:{src}" if src.startswith("//") else src
+
+        # === DESCRIPTION ===
         desc_elem = soup.select_one("article.product-description")
         description = desc_elem.get_text(separator="\n").strip() if desc_elem else ""
 
         # === FIELDS TO EXTRACT ===
         wanted_fields = {
+            "picture_link": picture_link,
             "Format": None,
             "EAN13": None,
             "ISBN": None,

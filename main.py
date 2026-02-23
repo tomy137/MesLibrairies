@@ -31,6 +31,23 @@ class MesLibrairies(
         BooksScraper.__init__(self)
         BooksMailer.__init__(self)
 
+    def refresh_missing_covers(self):
+        books = self.get_books_missing_cover()
+        if not books:
+            return
+        logging.info(f"🖼️ {len(books)} livre(s) sans couverture, tentative de récupération...")
+        updated = 0
+        for book in books:
+            try:
+                details = self.parse_livre_details(book["url"])
+                cover = details.get("picture_link")
+                if cover:
+                    self.update_book_cover(book["url"], cover)
+                    updated += 1
+            except Exception as e:
+                logging.warning(f"Erreur récupération couverture pour {book['title']}: {e}")
+        logging.info(f"🖼️ {updated} couverture(s) mise(s) à jour.")
+
     def refresh_books(self):
         """
         Refresh books for all authors in the database.
@@ -79,7 +96,7 @@ if __name__ == "__main__":
     parser.add_argument("--author_id", required=False, help="Author ID from leslibraires.fr (e.g., 1949874 for Stephen King)")
     parser.add_argument("--author_slug", required=False, help="Author Slug from leslibraires.fr (e.g., stephen-king for Stephen King)")
     parser.add_argument("--mail_to", required=False, help="Send report by mail to")
-    parser.add_argument("command", nargs="?", choices=["send_report", "refresh", "add"], help="Special command (e.g., send_report, refresh, add)")
+    parser.add_argument("command", nargs="?", choices=["send_report", "refresh", "add", "preview"], help="Special command (e.g., send_report, refresh, add, preview)")
     args = parser.parse_args()
 
     mesLibrairies = MesLibrairies()
@@ -98,10 +115,38 @@ if __name__ == "__main__":
 
     elif args.command == "send_report":
         logging.debug("Envoi du rapport par mail.")
+        mesLibrairies.refresh_missing_covers()
         mesLibrairies.send_weekly_news(args.mail_to)
+
+    elif args.command == "preview":
+        logging.debug("Génération de la preview HTML.")
+        weekly_books = mesLibrairies.get_weekly_books()
+        monthly_books = mesLibrairies.get_monthly_books()
+
+        html = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"/></head>
+<body style="margin:0;padding:0;background:#f5f5f5;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
+<div style="max-width:600px;margin:20px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+    <div style="background:#2c5282;color:white;padding:24px;text-align:center;">
+        <h1 style="margin:0;font-size:22px;">📚 Des nouvelles de vos librairies !</h1>
+    </div>
+    <div style="padding:20px 24px;">
+        {mesLibrairies._render_books_section("Cette semaine", weekly_books)}
+        {mesLibrairies._render_books_section("Ce mois-ci", monthly_books)}
+    </div>
+    <div style="background:#f0f4f8;padding:12px;text-align:center;font-size:11px;color:#888;">
+        MesLibrairies — données issues de leslibraires.fr
+    </div>
+</div>
+</body></html>"""
+
+        with open("/tmp/mail_preview.html", "w") as f:
+            f.write(html)
+        logging.info("✅ Preview saved to /tmp/mail_preview.html")
 
     else:
         logging.debug("Rafraichissement des livres des auteurs déjà en base de données ET envoi par mail.")
         mesLibrairies.refresh_books()
         if args.mail_to:
+            mesLibrairies.refresh_missing_covers()
             mesLibrairies.send_weekly_news(args.mail_to)
