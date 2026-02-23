@@ -4,6 +4,10 @@ L'idée est simple: vous ajoutez vos auteurs préférés et recevez un mail tout
 
 C'est un outil Python pour scraper les nouveautés livres sur [leslibraires.fr](https://www.leslibraires.fr), stocker les résultats dans une base SQLite, et envoyer un rapport hebdomadaire par email.
 
+## Aperçu
+
+<img src="screenshot.png" alt="Aperçu du mail hebdomadaire" width="400" />
+
 ## Fonctionnalités
 
 - Scraping des livres par auteur depuis leslibraires.fr
