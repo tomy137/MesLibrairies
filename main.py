@@ -18,6 +18,7 @@ class MesLibrairies(
     BooksScraper,
     BooksMailer,
 ):
+    """Classe principale qui combine DB, scraper et mailer via héritage multiple."""
     def __init__(self):
         self.db_path = os.environ.get("DB_PATH") or "books.db"
         self.source_url = os.environ.get("SOURCE_URL") or "https://www.leslibraires.fr"
@@ -32,6 +33,7 @@ class MesLibrairies(
         BooksMailer.__init__(self)
 
     def refresh_missing_covers(self):
+        """Re-scrape la page de détail des livres sans couverture pour tenter de récupérer l'image."""
         books = self.get_books_missing_cover()
         if not books:
             return
@@ -115,6 +117,7 @@ if __name__ == "__main__":
         logging.info("✅ Preview saved to /tmp/mail_preview.html")
 
     else:
+        # Commande par défaut (sans argument) : refresh + envoi mail si --mail_to est fourni
         logging.debug("Rafraichissement des livres des auteurs déjà en base de données ET envoi par mail.")
         mesLibrairies.refresh_books()
         if args.mail_to:

@@ -5,6 +5,7 @@ from bs4 import BeautifulSoup
 from datetime import date
 
 
+# Correspondance mois français -> numéro, pour parser les dates de publication
 FRENCH_MONTHS = {
     "janvier": 1, "février": 2, "mars": 3, "avril": 4,
     "mai": 5, "juin": 6, "juillet": 7, "août": 8,
@@ -13,10 +14,13 @@ FRENCH_MONTHS = {
 
 
 class BooksScraper:
-    """A class to scrape books from leslibraires.fr."""
+    """Scraper pour leslibraires.fr : récupère les livres par auteur via l'endpoint HTMX paginé."""
 
     def scrap_books_by_author(self, author_id, author_slug):
-        """Scrape books by a specific author from leslibraires.fr."""
+        """
+        Parcourt les pages de livres d'un auteur et insère les nouveaux en base.
+        S'arrête dès qu'une page ne contient aucun nouveau livre (déjà tous en base).
+        """
         htmx_url = f"{self.source_url}/htmx/contributions/?personID={author_id}&contributionType=By(author)"
         page = 1
         added_books = []
@@ -58,6 +62,7 @@ class BooksScraper:
         return added_books
 
     def parse_livre_details(self, url):
+        """Scrape la page de détail d'un livre pour en extraire couverture, description, métadonnées."""
         headers = {"User-Agent": "Mozilla/5.0"}
         response = requests.get(url, headers=headers)
         soup = BeautifulSoup(response.text, "html.parser")
@@ -74,7 +79,7 @@ class BooksScraper:
         desc_elem = soup.select_one("article.product-description")
         description = desc_elem.get_text(separator="\n").strip() if desc_elem else ""
 
-        # === FIELDS TO EXTRACT ===
+        # Champs à extraire depuis le tableau de caractéristiques du livre
         wanted_fields = {
             "picture_link": picture_link,
             "Format": None,
@@ -87,6 +92,7 @@ class BooksScraper:
             "description": description,
         }
 
+        # Parcourt le tableau HTML <th>label</th><td>valeur</td> de la fiche produit
         for row in soup.select("article.product-features table tr"):
             th = row.select_one("th")
             td = row.select_one("td")
@@ -116,6 +122,7 @@ class BooksScraper:
         return wanted_fields
 
     def extract_books_from_html(self, html):
+        """Parse le HTML d'une page de résultats HTMX et retourne une liste de livres (titre, auteur, éditeur, url, couverture)."""
         soup = BeautifulSoup(html, "html.parser")
 
         books = []
@@ -146,8 +153,8 @@ class BooksScraper:
         return books
 
     def clean_name(self, name: str) -> str:
+        """Nettoie un nom de collection en retirant le suffixe numérique entre parenthèses, ex: 'Folio (123)' -> 'Folio'."""
         if not name:
             return ""
-        # Supprimer uniquement les parenthèses contenant uniquement des chiffres
         name = re.sub(r"\s*\(\s*\d+\s*\)$", "", name)
         return name.strip()

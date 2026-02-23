@@ -6,11 +6,13 @@ import pendulum
 
 
 class BooksDB:
+    """Couche d'accès SQLite pour les auteurs et les livres."""
+
     def __init__(self):
         self.conn = sqlite3.connect(self.db_path)
         cur = self.conn.cursor()
 
-        # Crée la table des auteurs
+        # Crée les tables si elles n'existent pas encore (premier lancement)
         cur.execute("""
             CREATE TABLE IF NOT EXISTS authors (
                 id INTEGER PRIMARY KEY,
@@ -79,6 +81,7 @@ class BooksDB:
         return author_row
 
     def insert_book(self, book: dict) -> bool:
+        """Insère un livre en base. Retourne False si l'URL existe déjà (IntegrityError)."""
         with self.conn as conn:
             try:
                 conn.execute(
@@ -129,9 +132,7 @@ class BooksDB:
         )
 
     def get_monthly_books(self):
-        """
-        Get books added during this month.
-        """
+        """Livres publiés ce mois-ci, en excluant ceux de la semaine courante (évite les doublons avec get_weekly_books)."""
         start_of_month = pendulum.now().start_of("month").date().isoformat()
         end_of_month = pendulum.now().end_of("month").date().isoformat()
         start_of_week = pendulum.now().start_of("week").date().isoformat()
@@ -146,6 +147,7 @@ class BooksDB:
         )
 
     def get_books_missing_cover(self) -> list[dict]:
+        """Livres du mois en cours dont la couverture est absente ou par défaut."""
         start_of_month = pendulum.now().start_of("month").date().isoformat()
         end_of_month = pendulum.now().end_of("month").date().isoformat()
         return self.get_books(
@@ -190,7 +192,7 @@ class BooksDB:
         return t
 
     def has_similar_book(self, author_id: int, title: str, book_id: int) -> bool:
-        """Check if the same author already has a book with a similar normalized title."""
+        """Vérifie si le même auteur a déjà un livre au titre similaire (détection de rééditions)."""
         normalized = self.normalize_title(title)
         if not normalized:
             return False

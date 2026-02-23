@@ -4,10 +4,13 @@ from loguru import logger as logging
 import smtplib
 from email.message import EmailMessage
 
+# URL de l'image placeholder utilisée quand un livre n'a pas de couverture
 DEFAULT_COVER = "https://static.leslibraires.fr//websites/design_2024/static/assets/icons/default/book.avif"
 
 
 class BooksMailer:
+    """Génération et envoi de la newsletter HTML par email (SMTP)."""
+
     def __init__(self):
         self.smtp_server = os.environ.get("SMTP_SERVER")
         self.smtp_port = os.environ.get("SMTP_PORT") or 587
@@ -15,6 +18,7 @@ class BooksMailer:
         self.sender_password = os.environ.get("SMTP_PASSWORD")
 
     def send_email(self, to, subject, html_body):
+        """Envoie un email HTML via SMTP avec STARTTLS."""
         msg = EmailMessage()
         msg["Subject"] = subject
         msg["From"] = self.sender_email
@@ -33,11 +37,13 @@ class BooksMailer:
             logging.opt(exception=True).warning("Erreur lors de l'envoi de l'email")
 
     def _book_cover_url(self, book):
+        """Retourne l'URL de couverture du livre, ou None si c'est l'image par défaut ou une URL invalide."""
         url = book.get("picture_link") or ""
         if DEFAULT_COVER in url or not url.startswith("https://"):
             return None
         return url
 
+    # Mots-clés dans le titre qui indiquent une réédition plutôt qu'une nouveauté
     REEDITION_KEYWORDS = [
         "nouvelle traduction",
         "édition collector",
@@ -68,6 +74,7 @@ class BooksMailer:
         )
 
     def _render_book_card(self, book):
+        """Génère le HTML d'une carte livre (couverture + titre + badge nouveau/réédition)."""
         title = escape(book.get("title") or "Sans titre")
         author = escape(book.get("author") or "Inconnu")
         date = escape(book.get("publication_date") or "")
@@ -105,6 +112,7 @@ class BooksMailer:
         </td></tr>"""
 
     def _render_books_section(self, title, books):
+        """Génère une section HTML (titre + liste de cartes livres), ou un message vide si aucun livre."""
         if not books:
             return f"""
             <div style="margin:20px 0;padding:16px;background:#f7f7f7;border-radius:8px;color:#666;text-align:center;">
@@ -121,6 +129,7 @@ class BooksMailer:
         </div>"""
 
     def _render_scrapping_report(self):
+        """Génère le tableau HTML récapitulatif du scrapping (auteurs traités, livres ajoutés, erreurs)."""
         summary = getattr(self, 'last_scrapping_summary', [])
         if not summary:
             return ""
@@ -175,5 +184,6 @@ class BooksMailer:
 </body></html>"""
 
     def send_weekly_news(self, to: str):
+        """Construit et envoie la newsletter hebdomadaire avec le rapport de scrapping."""
         html = self.build_newsletter_html(extra_content=self._render_scrapping_report())
         self.send_email(to, "📚 Quoi de neuf en librairie ?", html)
