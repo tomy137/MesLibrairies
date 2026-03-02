@@ -119,7 +119,12 @@ class BooksMailer:
                 😫 {escape(title)} : rien de nouveau.
             </div>"""
 
-        cards = "\n".join(self._render_book_card(book) for book in books)
+        # Séparer nouveautés et rééditions, nouveautés en premier
+        nouveautes = [b for b in books if not self._detect_reedition(b)]
+        reeditions = [b for b in books if self._detect_reedition(b)]
+        sorted_books = nouveautes + reeditions
+
+        cards = "\n".join(self._render_book_card(book) for book in sorted_books)
         return f"""
         <div style="margin:20px 0;">
             <h2 style="color:#2c5282;font-size:18px;border-bottom:2px solid #2c5282;padding-bottom:6px;">📚 {escape(title)}</h2>
