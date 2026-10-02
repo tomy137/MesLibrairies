@@ -1,5 +1,7 @@
 import requests
 import re
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from loguru import logger as logging
 from bs4 import BeautifulSoup
 from datetime import date
@@ -13,8 +15,30 @@ FRENCH_MONTHS = {
 }
 
 
+# (connexion, lecture) en secondes : le site peut mettre plusieurs dizaines de secondes à répondre
+REQUEST_TIMEOUT = (15, 90)
+
+
 class BooksScraper:
     """Scraper pour leslibraires.fr : récupère les livres par auteur via l'endpoint HTMX paginé."""
+
+    def __init__(self):
+        # Session avec retries (backoff 10s, 20s, 40s, 80s) sur erreurs réseau et réponses 429/5xx
+        retry = Retry(
+            total=4,
+            backoff_factor=10,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["GET"],
+        )
+        self.session = requests.Session()
+        self.session.mount("https://", HTTPAdapter(max_retries=retry))
+        self.session.mount("http://", HTTPAdapter(max_retries=retry))
+
+    def _get(self, url, **kwargs):
+        """GET avec timeout et retries ; lève une exception si le site renvoie toujours une erreur HTTP."""
+        r = self.session.get(url, timeout=REQUEST_TIMEOUT, **kwargs)
+        r.raise_for_status()
+        return r
 
     def scrap_books_by_author(self, author_id, author_slug):
         """
@@ -29,7 +53,7 @@ class BooksScraper:
         logging.debug(f"🌎 Fetching {author_slug} books ...")
 
         while True:
-            r = requests.get(htmx_url, params={"page": page}, headers=self.headers)
+            r = self._get(htmx_url, params={"page": page}, headers=self.headers)
 
             if not r.content.strip():
                 break
@@ -43,6 +67,9 @@ class BooksScraper:
 
             for book in books:
                 if not (book["title"] and book["author"]):
+                    continue
+                # Livre déjà connu : inutile de charger sa page de détail (le site est lent)
+                if self.book_exists(book["url"]):
                     continue
                 book_details = self.parse_livre_details(book["url"])
                 non_null_details = {k: v for k, v in book_details.items() if v is not None}
@@ -64,7 +91,7 @@ class BooksScraper:
     def parse_livre_details(self, url):
         """Scrape la page de détail d'un livre pour en extraire couverture, description, métadonnées."""
         headers = {"User-Agent": "Mozilla/5.0"}
-        response = requests.get(url, headers=headers)
+        response = self._get(url, headers=headers)
         soup = BeautifulSoup(response.text, "html.parser")
 
         # === COUVERTURE depuis la page de détail ===

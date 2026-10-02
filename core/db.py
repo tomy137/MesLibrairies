@@ -157,6 +157,10 @@ class BooksDB:
             (start_of_month, end_of_month),
         )
 
+    def book_exists(self, book_url: str) -> bool:
+        """Indique si un livre est déjà en base (même URL)."""
+        return self.conn.execute("SELECT 1 FROM books WHERE url = ?", (book_url,)).fetchone() is not None
+
     def update_book_cover(self, book_url: str, picture_link: str):
         with self.conn as conn:
             conn.execute(
